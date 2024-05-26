@@ -2,3 +2,4 @@
 .idea
 *.json
 *.root
+test.py
