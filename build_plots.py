@@ -6,6 +6,7 @@ import numpy as np
 def main():
     JSON_PATH = 'data.json'
     data = read_json(JSON_PATH)
+    print(data['nominal_Loose'].keys())
 
 
 def read_json(where_json: str):
