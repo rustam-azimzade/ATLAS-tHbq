@@ -1,6 +1,8 @@
 import uproot
 import json
 import logging
+import pandas as pd
+import numpy as np
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -9,14 +11,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def main():
     ROOT_PATH = 'single_t_weighted.root'
     JSON_PATH = ROOT_PATH.replace('.root', '.json')
-
     root2json(ROOT_PATH, JSON_PATH)
 
 
-def root2json(where_root: str, where_json: str) -> None:
-    data = dict()
+def strip_encoding(name: str) -> str:
+    return name.split(';')[0]
 
-    strip_encoding = lambda name: name.split(';')[0]
+
+def root2json(where_root: str, where_json: str) -> None:
+    extracted_data = dict()
 
     try:
         # Extracting data from .root file
@@ -29,18 +32,21 @@ def root2json(where_root: str, where_json: str) -> None:
                 for branch_name in tree.keys():
                     branch_name = strip_encoding(branch_name)
                     logging.info(f"\tProcessing branch: {branch_name}")
-                    branch_data = tree[branch_name].array().to_list()
+                    branch_data = tree[branch_name].arrays()
+                    #branch_data = tree[branch_name].arrays().tolist()
+                    #branch_data = tree[branch_name].arrays(library="np")
+                    # branch_data = tree[branch_name].arrays(library="pd")
+                    # branch_data = tree[branch_name].arrays(library="ak")
                     tree_data[branch_name] = branch_data
-                data[tree_name] = tree_data
-
-        # Writing data to a JSON file
-        with open(where_json, 'w') as json_file:
-            json.dump(data, json_file)
-
-        logging.info(f"Data have been written to {where_json}")
-
+                extracted_data[tree_name] = tree_data
     except Exception as exception_info:
         logging.error(f"An error occurred: {exception_info}")
+        return
+
+    # Writing data to a JSON file
+    data_frame = pd.DataFrame(extracted_data)
+    data_frame.to_json(where_json, index=False)
+    logging.info(f"Data have been written to {where_json}")
 
 
 if __name__ == '__main__':
