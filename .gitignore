@@ -1,7 +1,5 @@
-.gitignore
-.venv
-.idea
-*.csv
+/.venv
+/.idea
 *.json
 *.root
 test.py

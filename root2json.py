@@ -1,6 +1,6 @@
 import uproot
 import logging
-import pandas as pd
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -9,7 +9,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def main():
     ROOT_PATH = 'single_t_weighted.root'
     JSON_PATH = ROOT_PATH.replace('.root', '.json')
-
     root2json(ROOT_PATH, JSON_PATH)
 
 
@@ -33,8 +32,8 @@ def root2json(where_root: str, where_json: str) -> None:
                 extracted_data[tree_name] = tree_data
 
         # Writing data to a JSON file
-        extracted_data_frame = pd.DataFrame(extracted_data)
-        extracted_data_frame.to_json(where_json, index=False)
+        with open(where_json, 'w', encoding='utf-8') as json_file:
+            json.dump(extracted_data, json_file, ensure_ascii=False)
         logging.info(f"Data have been written to {where_json}")
 
     except Exception as exception_info:
