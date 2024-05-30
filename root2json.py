@@ -28,7 +28,7 @@ def root2json(where_root: str, where_json: str) -> None:
                 for branch_name in tree.keys():
                     branch_name = strip_encoding(branch_name)
                     logging.info(f"\tProcessing branch: {branch_name}")
-                    branch_data = tree[branch_name].array(library="ak").to_list() # library=None library="np" library="pd"
+                    branch_data = tree[branch_name].array(library="ak").to_list()
                     tree_data[branch_name] = branch_data
                 extracted_data[tree_name] = tree_data
 
