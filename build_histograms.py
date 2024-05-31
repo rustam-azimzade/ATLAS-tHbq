@@ -2,10 +2,12 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import scienceplots
+import os
 
 
 def main():
     JSON_PATH = 'single_t_weighted.json'
+    FOLDER_NAME = 'histograms'
     TREE_NAME = 'nominal_Loose'
     BRANCHES_NAME = ['nnonbjets', 'foxWolfram_2_momentum', 'chi2_min_higgs_m', 'nbjets', 'njets',
                     'nfwdjets', 'njets_CBT5', 'njets_CBT4', 'sphericity', 'chi2_min_Imvmass_tH',
@@ -14,6 +16,9 @@ def main():
                     'bbs_top_m']
     data = pd.read_json(JSON_PATH)
     tree = data[TREE_NAME]
+
+    if not os.path.exists(FOLDER_NAME):
+        os.makedirs(FOLDER_NAME)
 
     for branch_name in BRANCHES_NAME:
         if branch_name in tree:
