@@ -1,6 +1,5 @@
 /.venv
 /.idea
-/histograms
 *.json
 *.root
 test.py
