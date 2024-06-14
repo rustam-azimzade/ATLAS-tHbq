@@ -71,9 +71,7 @@ def histogram(signal, background, signal_normalized, background_transformed):
     axis1.hist(signal, density=False, histtype='step', bins=bins_count_signal, label='Signal', color='blue')
     axis1.plot([], [], ' ', label=f'Mean: {mean_value_signal:.3f}')
     axis1.plot([], [], ' ', label=f'Std Dev: {standard_deviation_signal:.3f}')
-    axis1.plot([], [], ' ', label=f'Bins: {len(bins_count_signal)}')
     axis1.hist(background, density=False, histtype='step', bins=bins_count_signal, label='Background', color='red')
-    axis1.plot([], [], ' ', label=f'Bins: {len(bins_count_signal)}')
     axis1.legend(loc='upper right', fontsize=10, fancybox=False, edgecolor='black')
 
     axis2 = axes[1]
@@ -86,9 +84,7 @@ def histogram(signal, background, signal_normalized, background_transformed):
     axis2.hist(signal_normalized, density=False, histtype='step', bins=bins_count_signal_normalized, label='Signal', color='blue')
     axis2.plot([], [], ' ', label=f'Mean: {mean_value_signal_normalized:.3f}')
     axis2.plot([], [], ' ', label=f'Std Dev: {standard_deviation_signal_normalized:.3f}')
-    axis2.plot([], [], ' ', label=f'Bins: {len(bins_count_signal_normalized)}')
     axis2.hist(background_transformed, density=False, histtype='step', bins=bins_count_signal_normalized, label='Background', color='red')
-    axis2.plot([], [], ' ', label=f'Bins: {len(bins_count_signal_normalized)}')
     axis2.legend(loc='upper right', fontsize=10, fancybox=False, edgecolor='black')
 
     figure.text(0.5, -0.05, f'{Config.VARIABLES_DESCRIPTION[name]} ({name})', ha='center', fontsize=10)
