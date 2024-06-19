@@ -4,21 +4,31 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 import matplotlib
 import scienceplots
-from config import *
+from pathlib import Path
+from config import Config
 
 
 def main():
     signal_data_frame = pd.read_json('data/json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
     signal_data_frame.index = range(1, len(signal_data_frame) + 1)
+
     background_data_frame = pd.read_json('data/json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
     background_data_frame.index = range(1, len(background_data_frame) + 1)
 
-    branch_name = 'higgs_m'
+    folder = Path("histograms")
+    if not folder.exists():
+        folder.mkdir()
+
+    for branch_name in Config.VARIABLES_DESCRIPTION.keys():
+        pass
+
+    branch_name = 'N_b'
     signal_data_frame = signal_data_frame[[branch_name]]
     background_data_frame = background_data_frame[[branch_name]]
 
     normalized_signal, max_value, min_value = normalize(signal_data_frame)
     transformed_background, _, _ = normalize(background_data_frame, max_value, min_value)
+
     histogram(signal_data_frame, background_data_frame, normalized_signal, transformed_background)
 
 
@@ -51,6 +61,7 @@ def histogram(signal, background, signal_normalized, background_transformed):
     bins_count_signal_normalized = np.histogram_bin_edges(signal_normalized, bins='scott')
 
     plt.style.use(['science', 'notebook', 'grid'])
+    matplotlib.rcParams.update({'font.size': 10})
     matplotlib.rcParams["axes.formatter.limits"] = (-1, 1)
     matplotlib.rcParams['axes.formatter.useoffset'] = True
     matplotlib.rcParams['axes.formatter.offset_threshold'] = 1
@@ -68,11 +79,12 @@ def histogram(signal, background, signal_normalized, background_transformed):
     axis1.xaxis.get_offset_text().set_size(10)
     axis1.yaxis.get_offset_text().set_size(10)
     axis1.tick_params(axis='both', labelsize=10)
-    axis1.hist(signal, density=False, histtype='step', bins=bins_count_signal, label='Signal', color='blue')
+    axis1.hist(signal, alpha=0.7, histtype='bar', bins=bins_count_signal, label='Signal', color='blue')
     axis1.plot([], [], ' ', label=f'Mean: {mean_value_signal:.3f}')
     axis1.plot([], [], ' ', label=f'Std Dev: {standard_deviation_signal:.3f}')
-    axis1.hist(background, density=False, histtype='step', bins=bins_count_signal, label='Background', color='red')
-    axis1.legend(loc='upper right', fontsize=10, fancybox=False, edgecolor='black')
+    axis1.hist(background, alpha=0.9, hatch='///', histtype='step', bins=bins_count_signal,
+               label='Background', color='red')
+    axis1.legend(loc='best', fontsize=10, fancybox=False, edgecolor='black')
 
     axis2 = axes[1]
     axis2.set_title('Normalized')
@@ -81,16 +93,21 @@ def histogram(signal, background, signal_normalized, background_transformed):
     axis2.yaxis.set_major_formatter(formatter)
     axis2.yaxis.get_offset_text().set_size(10)
     axis2.tick_params(axis='both', labelsize=10)
-    axis2.hist(signal_normalized, density=False, histtype='step', bins=bins_count_signal_normalized, label='Signal', color='blue')
+    axis2.hist(signal_normalized, alpha=0.7, histtype='bar', bins=bins_count_signal_normalized,
+               label='Signal', color='blue')
     axis2.plot([], [], ' ', label=f'Mean: {mean_value_signal_normalized:.3f}')
     axis2.plot([], [], ' ', label=f'Std Dev: {standard_deviation_signal_normalized:.3f}')
-    axis2.hist(background_transformed, density=False, histtype='step', bins=bins_count_signal_normalized, label='Background', color='red')
-    axis2.legend(loc='upper right', fontsize=10, fancybox=False, edgecolor='black')
+    axis2.hist(background_transformed, alpha=0.9, hatch='///', histtype='step',
+               bins=bins_count_signal_normalized, label='Background', color='red')
+    axis2.legend(loc='best', fontsize=10, fancybox=False, edgecolor='black')
 
-    figure.text(0.5, -0.05, f'{Config.VARIABLES_DESCRIPTION[name]} ({name})', ha='center', fontsize=10)
+    if True:
+        figure.text(0.5, 0, f'{Config.VARIABLES_DESCRIPTION[name]} ({name})', ha='center', fontsize=10)
+    else:
+        figure.text(0.5, -0.05, f'{Config.VARIABLES_DESCRIPTION[name]} ({name})', ha='center', fontsize=10)
 
-    plt.show()
-    #plt.savefig(f'{name}.png', dpi=300)
+    #plt.show()
+    plt.savefig(f'histograms/{name}.png', dpi=300)
     plt.close()
 
 

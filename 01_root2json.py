@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 def main():
-    ROOT_PATH = 'data/root/MiniNtuple_tt_SM_3M.root'
+    ROOT_PATH = 'data/root/MiniNtuple_tHbq_SM_300K.root'
     root2json(ROOT_PATH)
 
 
@@ -24,7 +24,7 @@ def root2json(where_root: str) -> None:
                 tree = root_file[tree_name]
 
                 for branch_name in tree.keys():
-                    if branch_name in Config.NECESSARY_BRANCHES:
+                    if branch_name in Config.VARIABLES_DESCRIPTION.keys():
                         logging.info(f"\tProcessing branch: {branch_name}")
                         branch_data = tree[branch_name].array(library="ak").to_list()
 
