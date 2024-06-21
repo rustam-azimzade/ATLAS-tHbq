@@ -74,16 +74,15 @@ def normalize(data, max_value=None, min_value=None):
 
 
 def plot_roc_curve(model, input, output):
+    # Предсказание вероятностей для класса 1 (positive class)
+    predictions = model.predict(input).ravel()
+    fpr, tpr, thresholds = roc_curve(output, predictions)
+    roc_auc = auc(fpr, tpr)
+
     plt.style.use(['science', 'notebook', 'grid'])
     matplotlib.rcParams.update({'font.size': 14})
     formatter = ScalarFormatter(useMathText=True)
     formatter.set_scientific(True)
-
-    # Предсказание вероятностей для класса 1 (positive class)
-    predictions = model.predict(input).ravel()
-
-    fpr, tpr, thresholds = roc_curve(output, predictions)
-    roc_auc = auc(fpr, tpr)
 
     plt.figure()
     plt.title('Receiver Operating Characteristic', fontsize=14)

@@ -1,12 +1,10 @@
 /.venv
 /.idea
 /src
-/root_histograms
 /histograms
-/histograms_test
 /data
 *.json
 *.root
 test.py
-*.jpg
 *.png
+*.jpg
