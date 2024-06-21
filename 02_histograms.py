@@ -20,16 +20,13 @@ def main():
         folder.mkdir()
 
     for branch_name in Config.VARIABLES_DESCRIPTION.keys():
-        pass
+        signal_data_frame = signal_data_frame[[branch_name]]
+        background_data_frame = background_data_frame[[branch_name]]
 
-    branch_name = 'N_b'
-    signal_data_frame = signal_data_frame[[branch_name]]
-    background_data_frame = background_data_frame[[branch_name]]
+        normalized_signal, max_value, min_value = normalize(signal_data_frame)
+        transformed_background, _, _ = normalize(background_data_frame, max_value, min_value)
 
-    normalized_signal, max_value, min_value = normalize(signal_data_frame)
-    transformed_background, _, _ = normalize(background_data_frame, max_value, min_value)
-
-    histogram(signal_data_frame, background_data_frame, normalized_signal, transformed_background)
+        histogram(signal_data_frame, background_data_frame, normalized_signal, transformed_background)
 
 
 def normalize(data, max_value=None, min_value=None):
@@ -54,7 +51,7 @@ def histogram(signal, background, signal_normalized, background_transformed):
 
     mean_value_signal = signal.mean()
     standard_deviation_signal = signal.std()
-    bins_count_signal = np.histogram_bin_edges(signal, bins='scott') # auto, fd, scott
+    bins_count_signal = np.histogram_bin_edges(signal, bins='scott')
 
     mean_value_signal_normalized = signal_normalized.mean()
     standard_deviation_signal_normalized = signal_normalized.std()

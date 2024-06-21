@@ -1,71 +1,64 @@
-import numpy as np
+import keras.optimizers
 from keras.models import Sequential
 from keras.layers import Dense
+from matplotlib.ticker import ScalarFormatter
+from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import train_test_split
-from sklearn.datasets import load_breast_cancer
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import RocCurveDisplay, roc_curve
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import matplotlib
-import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.optimizers import Adam
-from sklearn.metrics import roc_curve, auc
+import matplotlib
 import matplotlib.pyplot as plt
-import os
+import scienceplots
+from config import Config
 
 
 def main():
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+    signal_data = pd.read_json('data/json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
+    background_data = pd.read_json('data/json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
 
-    matplotlib.rcParams.update({'font.size': 14})
-    pd.set_option('display.max_columns', 10)
+    for branch_name in Config.VARIABLES_DESCRIPTION:
+        signal_data[branch_name], max_value, min_value = normalize(signal_data[branch_name])
+        background_data[branch_name], _, _ = normalize(background_data[branch_name], max_value, min_value)
 
-    signal_data_frame = pd.read_json('data/json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
-    signal_data_frame['target'] = 1
+    signal_data['signal'] = 1
+    background_data['signal'] = 0
 
-    background_data_frame = pd.read_json('data/json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
-    background_data_frame['target'] = 0
+    total_data = pd.concat([signal_data, background_data])
+    total_data = total_data.sample(frac=1).reset_index(drop=True)
+    total_data.index = range(1, len(total_data) + 1)
 
-    inputs = pd.concat([signal_data_frame, background_data_frame])
-    inputs = inputs.sample(frac=1).reset_index(drop=True)
-    inputs.index = range(1, len(inputs) + 1)
+    input_data = total_data.drop(columns=['signal'])
+    output = pd.Series(total_data['signal'])
 
+    input_train, input_test, output_train, output_test = train_test_split(input_data, output, test_size=0.3,
+                                                                          shuffle=True)
 
-
-
-    data = load_breast_cancer()
-
-    input = pd.DataFrame(data['data'], columns=data['feature_names'])
-    output = pd.Series(data['target'])
-
-    np.random.seed(5)
-    features = np.random.randint(input.shape[1], size=2)
-
-    input_train, input_test, output_train, output_test = train_test_split(input.iloc[:, features], output, test_size=9, random_state=4)
-
-    model = Sequential([
-        Dense(22, input_dim=22, activation='relu'),
-        Dense(128, activation='relu'),
-        Dense(64, activation='relu'),
-        Dense(1, activation='sigmoid')
+    neural_network = Sequential([
+        Dense(units=24, input_dim=24, activation='relu'),
+        Dense(units=128, activation='relu'),
+        Dropout(0.5),
+        Dense(units=64, activation='relu'),
+        Dense(units=1, activation='sigmoid')
     ])
 
-    model.compile(optimizer=Adam(learning_rate=0.001),
-                  loss='binary_crossentropy',
-                  metrics=[tf.keras.metrics.AUC(name='auc')])
+    my_optimizer = keras.optimizers.SGD(learning_rate=0.001,
+                                        momentum=0.0,
+                                        nesterov=True)
 
-    model.fit(input_train, output_train, epochs=50, batch_size=256, validation_split=0.2, verbose=1)
+    neural_network.compile(optimizer=my_optimizer,
+                           loss='binary_crossentropy')
 
-    # Сохранение модели
-    model.save('atlas_classification_model.h5')
+    neural_network.fit(input_train,
+                       output_train,
+                       epochs=50,
+                       batch_size=256,
+                       verbose=1)
 
-    RocCurveDisplay.from_estimator(model, input_test, output_test)
-    plt.show()
+    neural_network.save('tHbq_signal_classification.h5')
+
+    plot_roc_curve(neural_network, input_test, output_test)
 
 
 def normalize(data, max_value=None, min_value=None):
@@ -78,6 +71,31 @@ def normalize(data, max_value=None, min_value=None):
 
     data = (data - min_value) / (max_value - min_value)
     return data, max_value, min_value
+
+
+def plot_roc_curve(model, input, output):
+    plt.style.use(['science', 'notebook', 'grid'])
+    matplotlib.rcParams.update({'font.size': 14})
+    formatter = ScalarFormatter(useMathText=True)
+    formatter.set_scientific(True)
+
+    # Предсказание вероятностей для класса 1 (positive class)
+    predictions = model.predict(input).ravel()
+
+    fpr, tpr, thresholds = roc_curve(output, predictions)
+    roc_auc = auc(fpr, tpr)
+
+    plt.figure()
+    plt.title('Receiver Operating Characteristic', fontsize=14)
+    plt.ylabel('True Positive Rate', fontsize=14)
+    plt.xlabel('False Positive Rate', fontsize=14)
+    plt.tick_params(axis='both', labelsize=14)
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.0])
+    plt.legend(loc='best', fontsize=14, fancybox=False, edgecolor='black')
+    plt.show()
 
 
 if __name__ == '__main__':
