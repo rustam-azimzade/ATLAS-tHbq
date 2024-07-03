@@ -62,17 +62,17 @@ def histogram(signal, background, signal_normalized, background_transformed):
     matplotlib.rcParams["axes.formatter.limits"] = (-1, 1)
     matplotlib.rcParams['axes.formatter.useoffset'] = True
     matplotlib.rcParams['axes.formatter.offset_threshold'] = 1
-    formatter = ScalarFormatter(useMathText=True)
-    formatter.set_scientific(True)
-    formatter.set_powerlimits((-1, 1))
+    my_formatter = ScalarFormatter(useMathText=True)
+    my_formatter.set_scientific(True)
+    my_formatter.set_powerlimits((-1, 1))
 
     figure, axes = plt.subplots(1, 2, figsize=(10, 3.5))
 
     axis1 = axes[0]
     axis1.set_title('Initially')
     axis1.set_ylabel('Number of events', fontsize=10)
-    axis1.xaxis.set_major_formatter(formatter)
-    axis1.yaxis.set_major_formatter(formatter)
+    axis1.xaxis.set_major_formatter(my_formatter)
+    axis1.yaxis.set_major_formatter(my_formatter)
     axis1.xaxis.get_offset_text().set_size(10)
     axis1.yaxis.get_offset_text().set_size(10)
     axis1.tick_params(axis='both', labelsize=10)
@@ -85,9 +85,9 @@ def histogram(signal, background, signal_normalized, background_transformed):
 
     axis2 = axes[1]
     axis2.set_title('Normalized')
-    axis2.xaxis.set_major_formatter(formatter)
+    axis2.xaxis.set_major_formatter(my_formatter)
     axis2.xaxis.get_offset_text().set_size(10)
-    axis2.yaxis.set_major_formatter(formatter)
+    axis2.yaxis.set_major_formatter(my_formatter)
     axis2.yaxis.get_offset_text().set_size(10)
     axis2.tick_params(axis='both', labelsize=10)
     axis2.hist(signal_normalized, alpha=0.7, histtype='bar', bins=bins_count_signal_normalized,
