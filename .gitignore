@@ -1,10 +1,12 @@
 /.venv
 /.idea
-/src
-/histograms
+/01_src
 /data
 *.json
 *.root
 test.py
-*.png
+Screenshot 2024-06-07 003613.png
+Screenshot 2024-06-07 004008.png
+Screenshot 2024-06-11 131902.png
+Screenshot 2024-06-11 132345.png
 *.jpg
