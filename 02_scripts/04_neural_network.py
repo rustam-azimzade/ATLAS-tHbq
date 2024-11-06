@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, LambdaCallback
 import matplotlib
 import matplotlib.pyplot as plt
 import scienceplots
@@ -18,6 +18,18 @@ MY_FORMATTER = ScalarFormatter(useMathText=True)
 MY_FORMATTER.set_scientific(True)
 MY_FORMATTER.set_powerlimits((0, 0))
 
+
+class EvaluateWithoutDropout(Callback):
+    def __init__(self, train_data):
+        super().__init__()
+        self.train_data = train_data
+
+    def on_epoch_end(self, epoch, logs=None):
+        train_loss, train_auc = self.model.evaluate(self.train_data[0], self.train_data[1], verbose=0)
+        logs['loss'] = train_loss
+        logs['auc'] = train_auc
+
+
 def set_plot_style():
     plt.style.use(['science', 'notebook', 'grid'])
     plt.rcParams.update({
@@ -26,6 +38,25 @@ def set_plot_style():
         'axes.formatter.useoffset': False,
         'axes.formatter.offset_threshold': 1
     })
+
+
+def define_model(columns_number):
+    model = Sequential([
+        Dense(units=columns_number, input_dim=columns_number, activation='relu'),
+        BatchNormalization(),
+        Dropout(0.4),
+        Dense(units=128, activation='relu'),
+        BatchNormalization(),
+        Dropout(0.4),
+        Dense(units=64, activation='relu'),
+        BatchNormalization(),
+        Dropout(0.4),
+        Dense(units=1, activation='sigmoid')
+    ])
+
+    my_optimizer = keras.optimizers.Adam(learning_rate=0.001)
+    model.compile(optimizer=my_optimizer, loss='binary_crossentropy', metrics='AUC')
+    return model
 
 
 def main():
@@ -39,42 +70,30 @@ def main():
     signal_data['signal'] = 1
     background_data['signal'] = 0
 
+    # Prepare data
     total_data = pd.concat([signal_data, background_data])
     total_data = total_data.sample(frac=1).reset_index(drop=True)
     total_data.index = range(1, len(total_data) + 1)
-
     input_data = total_data.drop(columns=['signal'])
     output = pd.Series(total_data['signal'])
 
-    columns_number = input_data.shape[1]
+    input_train, input_test, label_train, label_test = train_test_split(input_data, output, test_size=0.3,
+                                                                        shuffle=True)
 
-    input_train, input_test, output_train, output_test = train_test_split(input_data, output, test_size=0.3,
-                                                                          shuffle=True)
+    neural_network = define_model(columns_number=input_data.shape[1])
 
-    neural_network = Sequential([
-        Dense(units=columns_number, input_dim=columns_number, activation='relu'),
-        BatchNormalization(),
-        Dropout(0.5),
-        Dense(units=128, activation='relu'),
-        BatchNormalization(),
-        Dropout(0.5),
-        Dense(units=64, activation='relu'),
-        BatchNormalization(),
-        Dropout(0.5),
-        Dense(units=1, activation='sigmoid')
-    ])
+    evaluate_without_dropout = EvaluateWithoutDropout(train_data=(input_train, label_train))
+    early_stop_callback = EarlyStopping(monitor='val_auc', mode='max', patience=20, restore_best_weights=True, verbose=1)
+    callbacks = [early_stop_callback, evaluate_without_dropout]
 
-    my_optimizer = keras.optimizers.Adam(learning_rate=0.001)
-    neural_network.compile(optimizer=my_optimizer, loss='binary_crossentropy', metrics='AUC')
-    callbacks = [EarlyStopping(monitor='val_auc', mode='max', patience=20, restore_best_weights=True, verbose=1)]
-    training_history = neural_network.fit(input_train, output_train, epochs=200, batch_size=1024, verbose=1,
+    training_history = neural_network.fit(input_train, label_train, epochs=200, batch_size=1024, verbose=1,
                                           callbacks=callbacks, validation_split=0.2, shuffle=True)
     neural_network.save('../03_results/02_neural_network/tH(bb)_signal_classification.hdf5')
 
     plot_history(training_history)
-    plot_roc_curve(neural_network, input_test, output_test)
-    plot_histogram_of_predictions(neural_network, input_test, output_test)
-    #plot_separate_histogram_of_predictions(neural_network, input_test, output_test)
+    plot_roc_curve(neural_network, input_test, label_test)
+    plot_histogram_of_predictions(neural_network, input_test, label_test)
+    #plot_separate_histogram_of_predictions(neural_network, input_test, label_test)
 
 
 def normalize(data, max_value=None, min_value=None):
@@ -152,7 +171,7 @@ def plot_histogram_of_predictions(model, inputs_data, outputs):
              label='Signal (p + p → t + H)', color='red')
     plt.hist(background_predictions, bins=bins, alpha=0.4, label='Background', color='blue')
     plt.legend(loc='upper center', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
-    plt.annotate(f'Separation Power: {separation_power * 100:.2f}%', xy=(0.28, 0.80),
+    plt.annotate(f'Separation Power: {separation_power:.2f}', xy=(0.28, 0.80),
                 xycoords='axes fraction', fontsize=FONT_SIZE, verticalalignment='top',
                 bbox=dict(boxstyle="square,pad=0.3", fc="white", ec="black", lw=1))
     plt.savefig('../03_results/02_neural_network/prediction.png', dpi=300)
