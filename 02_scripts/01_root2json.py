@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 def main():
-    ROOT_PATH = 'data/root/MiniNtuple_tHbq_SM_300K.root'
+    ROOT_PATH = '../data/root/MiniNtuple_ttbb_SM_300K.root'
     root2json(ROOT_PATH)
 
 
