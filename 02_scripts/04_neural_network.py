@@ -14,22 +14,35 @@ import matplotlib.pyplot as plt
 import scienceplots
 from config import Config
 
-
 FONT_SIZE = 14
 MY_FORMATTER = ScalarFormatter(useMathText=True)
 MY_FORMATTER.set_scientific(True)
 MY_FORMATTER.set_powerlimits((0, 0))
 
+WEIGHTS = {
+    "tHbq": 1.0,
+    "tt": 1.0,
+    "ttbb": 1.862340,
+    "ttH": 0.268164,
+    "tzbq": 0.000001
+}
 
 class EvaluateWithoutDropout(Callback):
-    def __init__(self, train_data):
+    def __init__(self, train_data, sample_weight=None):
         super().__init__()
         self.train_data = train_data
+        self.sample_weight = sample_weight
 
     def on_epoch_end(self, epoch, logs=None):
-        train_loss, train_auc = self.model.evaluate(self.train_data[0], self.train_data[1], verbose=0)
-        logs['loss'] = train_loss
-        logs['auc'] = train_auc
+        results = self.model.evaluate(
+            self.train_data[0],
+            self.train_data[1],
+            sample_weight=self.sample_weight,
+            verbose=0
+        )
+
+        for name, value in zip(self.model.metrics_names, results):
+            logs[name] = value
 
 
 def set_plot_style():
@@ -57,7 +70,12 @@ def define_model(input_neurons):
     ])
 
     my_optimizer = Adam(learning_rate=0.0001)
-    model.compile(optimizer=my_optimizer, loss='binary_crossentropy', metrics='AUC')
+    model.compile(
+        optimizer=my_optimizer,
+        loss='binary_crossentropy',
+        metrics=['binary_crossentropy', 'AUC'],
+        weighted_metrics=['binary_crossentropy', 'AUC']
+    )
     return model
 
 
@@ -91,16 +109,16 @@ def save_history(history):
     axis1.set_ylabel('Binary Crossentropy', fontsize=FONT_SIZE)
     axis1.set_xlabel('Number of Epochs', fontsize=FONT_SIZE)
     axis1.tick_params(axis='both', labelsize=FONT_SIZE)
-    axis1.plot(history.history['loss'], label='Train Data')
-    axis1.plot(history.history['val_loss'], label='Validation Data')
+    axis1.plot(history.history['weighted_binary_crossentropy'], label='Train Data')
+    axis1.plot(history.history['val_weighted_binary_crossentropy'], label='Validation Data')
     axis1.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
     axis2 = axes[1]
     axis2.set_ylabel('AUC', fontsize=FONT_SIZE)
     axis2.set_xlabel('Number of Epochs', fontsize=FONT_SIZE)
     axis2.tick_params(axis='both', labelsize=FONT_SIZE)
-    axis2.plot(history.history['auc'], label='Train Data')
-    axis2.plot(history.history['val_auc'], label='Validation Data')
+    axis2.plot(history.history['auc_1'], label='Train Data')
+    axis2.plot(history.history['val_auc_1'], label='Validation Data')
 
     axis2.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
@@ -108,9 +126,9 @@ def save_history(history):
     plt.close()
 
 
-def save_roc_curve(model, inputs_data, outputs):
+def save_roc_curve(model, inputs_data, outputs, weights):
     predictions = model.predict(inputs_data).ravel()
-    fpr, tpr, thresholds = roc_curve(outputs, predictions, drop_intermediate=False)
+    fpr, tpr, thresholds = roc_curve(outputs, predictions, sample_weight=weights, drop_intermediate=False)
     roc_auc = auc(fpr, tpr)
 
     plt.figure()
@@ -118,7 +136,7 @@ def save_roc_curve(model, inputs_data, outputs):
     plt.ylabel('True Positive Rate', fontsize=FONT_SIZE)
     plt.xlabel('False Positive Rate', fontsize=FONT_SIZE)
     plt.tick_params(axis='both', labelsize=FONT_SIZE)
-    plt.plot(fpr, tpr, color='blue', label='ROC curve (area = %0.2f)' % roc_auc)
+    plt.plot(fpr, tpr, color='blue', label='ROC curve (area = %0.4f)' % roc_auc)
     plt.plot([0, 1], [0, 1], color='red', linestyle='--')
     plt.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
@@ -126,18 +144,26 @@ def save_roc_curve(model, inputs_data, outputs):
     plt.close()
 
 
-def save_histogram_of_predictions(model, inputs_data, outputs):
+def save_histogram_of_predictions(model, inputs_data, outputs, weights=None):
     predictions = model.predict(inputs_data).ravel()
-    signal_predictions = predictions[outputs == 1]
-    background_predictions = predictions[outputs == 0]
+
+    signal_mask = outputs == 1
+    background_mask = outputs == 0
+
+    signal_predictions = predictions[signal_mask]
+    background_predictions = predictions[background_mask]
+
+    signal_weights = weights[signal_mask]
+    background_weights = weights[background_mask]
 
     bins = np.linspace(0, 1, 20)
 
-    signal_hist, _ = np.histogram(signal_predictions, bins=bins, density=True)
-    background_hist, _ = np.histogram(background_predictions, bins=bins, density=True)
+    signal_hist, _ = np.histogram(signal_predictions, bins=bins, weights=signal_weights, density=True)
+    background_hist, _ = np.histogram(background_predictions, bins=bins, weights=background_weights, density=True)
 
     signal_hist /= np.sum(signal_hist)
     background_hist /= np.sum(background_hist)
+
     separation_power = 0
     for i in range(1, len(signal_hist) - 1):
         if signal_hist[i] == 0 and background_hist[i] == 0:
@@ -156,9 +182,9 @@ def save_histogram_of_predictions(model, inputs_data, outputs):
     plt.xlabel('Predicted Probability', fontsize=FONT_SIZE)
     plt.ylabel('Number of events', fontsize=FONT_SIZE)
     plt.tick_params(axis='both', labelsize=FONT_SIZE)
-    plt.hist(signal_predictions, bins=bins, alpha=0.9, hatch='//', histtype='step',
-             label='Signal (p + p → t + H)', color='red')
-    plt.hist(background_predictions, bins=bins, alpha=0.4, label='Background', color='blue')
+    plt.hist(signal_predictions, bins=bins, alpha=0.9, hatch='//', histtype='step', label='Signal (p + p → t + H)',
+             color='red', weights=signal_weights)
+    plt.hist(background_predictions, bins=bins, alpha=0.4, label='Background', color='blue', weights=background_weights)
     plt.legend(loc='upper center', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
     plt.annotate(f'Separation Power: {separation_power * 100:.2f}%\nSignal Significance: {signal_significance * 100:.2f}%',
                  xy=(0.28, 0.80), xycoords='axes fraction', fontsize=FONT_SIZE, verticalalignment='top',
@@ -195,57 +221,72 @@ def save_separate_histogram_of_predictions(model, inputs_data, outputs):
 
 
 def main():
-    signal_data = pd.read_json('../data/json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
-    background_data = pd.read_json('../data/json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
+    tHbq_events = pd.read_json('../data/json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
+    tt_events = pd.read_json('../data/json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
+    ttbb_events = pd.read_json('../data/json/MiniNtuple_ttbb_SM_300K_(aTTreett;1).json')
+    ttH_events = pd.read_json('../data/json/MiniNtuple_ttH_SM_100K_(aTTreetth;1).json')
+    tzbq_events = pd.read_json('../data/json/MiniNtuple_tzbq_SM_100K_(aTTreethbq;1).json')
 
-    background_data_tt = pd.read_json('../data/json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
-    background_data_ttbb = pd.read_json('../data/json/MiniNtuple_ttbb_SM_300K_(aTTreett;1).json')
-    background_data_ttH = pd.read_json('../data/json/MiniNtuple_ttH_SM_100K_(aTTreetth;1).json')
-    background_data_tzbq = pd.read_json('../data/json/MiniNtuple_tzbq_SM_100K_(aTTreethbq;1).json')
-
-    #background_data = pd.concat([background_data_tt, background_data_ttbb, background_data_ttH, background_data_tzbq],
-    #                            axis=0)
-
-    signal_data = signal_data.drop(columns=['N_b'])
-    background_data = background_data.drop(columns=['N_b'])
+    tHbq_events = tHbq_events.drop(columns=['N_b'])
+    tt_events = tt_events.drop(columns=['N_b'])
+    ttbb_events = ttbb_events.drop(columns=['N_b'])
+    ttH_events = ttH_events.drop(columns=['N_b'])
+    tzbq_events = tzbq_events.drop(columns=['N_b'])
 
     for branch_name in Config.VARIABLES_DESCRIPTION:
-        signal_data[branch_name], max_value, min_value = normalize(signal_data[branch_name])
-        background_data[branch_name], _, _ = normalize(background_data[branch_name], max_value, min_value)
+        tHbq_events[branch_name], max_value, min_value = normalize(tHbq_events[branch_name])
+        tt_events[branch_name], _, _ = normalize(tt_events[branch_name], max_value, min_value)
+        ttbb_events[branch_name], _, _ = normalize(ttbb_events[branch_name], max_value, min_value)
+        ttH_events[branch_name], _, _ = normalize(ttH_events[branch_name], max_value, min_value)
+        tzbq_events[branch_name], _, _ = normalize(tzbq_events[branch_name], max_value, min_value)
 
     # Label data
-    signal_data['signal'] = 1
-    background_data['signal'] = 0
+    tHbq_events['signal'] = 1
+    tt_events['signal'] = 0
+    ttbb_events['signal'] = 0
+    ttH_events['signal'] = 0
+    tzbq_events['signal'] = 0
+
+    tHbq_events['weight'] = WEIGHTS['tHbq']
+    tt_events['weight'] = WEIGHTS['tt']
+    ttbb_events['weight'] = WEIGHTS['ttbb']
+    ttH_events['weight'] = WEIGHTS['ttH']
+    tzbq_events['weight'] = WEIGHTS['tzbq']
 
     # Prepare data
-    total_data = pd.concat([signal_data, background_data])
-    total_data = total_data.sample(frac=1).reset_index(drop=True)
-    total_data.index = range(1, len(total_data) + 1)
-    input_data = total_data.drop(columns=['signal'])
-    output = pd.Series(total_data['signal'])
+    total_events = pd.concat([tHbq_events, tt_events, ttbb_events, ttH_events, tzbq_events])
+    total_events = total_events.sample(frac=1).reset_index(drop=True)
+    total_events.index = range(1, len(total_events) + 1)
+    input = total_events.drop(columns=['signal', 'weight'])
+    output = pd.Series(total_events['signal'])
+    events_weights = total_events['weight']
 
-    input_train, input_test, output_train, output_test = train_test_split(input_data, output, test_size=0.3,
-                                                                        shuffle=True)
+    input_train, input_test, output_train, output_test, weights_train, weights_test = train_test_split(
+        input, output, events_weights, test_size=0.3, shuffle=True)
 
-    columns_number = input_data.shape[1]
+    columns_number = input.shape[1]
     neural_network = define_model(input_neurons=columns_number)
 
     learning_rate_scheduler = LearningRateScheduler(
-        lambda epoch: exponential_decay(epoch, patience_epoch=200, initial_learning_rate=0.001,
-                                        final_learning_rate=0.0001, decay_factor=80)
+        lambda epoch: exponential_decay(epoch, patience_epoch=200, initial_learning_rate=0.0001,
+                                        final_learning_rate=0.00005, decay_factor=80)
     )
     tensor_board = TensorBoard(log_dir='03_results/tb_logs', histogram_freq=1, write_images=True)
-    evaluate_without_dropout = EvaluateWithoutDropout(train_data=(input_train, output_train))
-    early_stop_callback = EarlyStopping(monitor='val_auc', mode='max', patience=20, restore_best_weights=True, verbose=1)
+    evaluate_without_dropout = EvaluateWithoutDropout(
+        train_data=(input_train, output_train),
+        sample_weight=weights_train
+    )
+    early_stop_callback = EarlyStopping(monitor='val_auc_1', mode='max', patience=20, restore_best_weights=True, verbose=1)
     callbacks = [learning_rate_scheduler, evaluate_without_dropout, early_stop_callback]
-
-    training_history = neural_network.fit(input_train, output_train, epochs=5000, batch_size=1024, verbose=1,
-                                          callbacks=callbacks, validation_split=0.2, shuffle=True)
+    training_history = neural_network.fit(
+        input_train, output_train, epochs=5000, batch_size=128, verbose=1, callbacks=callbacks,
+        sample_weight=weights_train, validation_split=0.2, shuffle=True
+    )
     neural_network.save('../03_results/02_neural_network/tH(bb)_signal_classification.hdf5')
 
     save_history(training_history)
-    save_roc_curve(neural_network, input_test, output_test)
-    save_histogram_of_predictions(neural_network, input_test, output_test)
+    save_roc_curve(neural_network, input_test, output_test, weights_test)
+    save_histogram_of_predictions(neural_network, input_test, output_test, weights_test)
     #save_separate_histogram_of_predictions(neural_network, input_test, output_test)
 
 
