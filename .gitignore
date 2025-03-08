@@ -1,9 +1,6 @@
 /.venv
 /.idea
-/01_src
-/data
-*.json
-*.root
+/01_src/00_info
 test.py
 Screenshot 2024-06-07 003613.png
 Screenshot 2024-06-07 004008.png

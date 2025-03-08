@@ -6,9 +6,9 @@ import json
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+ROOT_PATH = '../01_src/01_data/01_root/MiniNtuple_tzbq_SM_100K.root'
 
 def main():
-    ROOT_PATH = '../data/root/MiniNtuple_ttbb_SM_300K.root'
     root2json(ROOT_PATH)
 
 
@@ -39,7 +39,7 @@ def root2json(where_root: str) -> None:
                         extracted_data[branch_name] = branch_data
 
                 # Writing data to a JSON file
-                json_path_parts = where_root.replace('root', 'json').rsplit('.', 1)
+                json_path_parts = where_root.replace('01_root', '02_json').replace('root', 'json').rsplit('.', 1)
                 where_json = f'{json_path_parts[0]}_({tree_name}).{json_path_parts[1]}'
 
                 with open(where_json, 'w', encoding='utf-8') as json_file:
