@@ -1,4 +1,3 @@
-import keras.optimizers
 import numpy as np
 from jax.example_libraries.stax import randn
 from matplotlib.ticker import ScalarFormatter
@@ -9,7 +8,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
 from tensorflow.keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, LearningRateScheduler, TensorBoard
 from tensorflow.keras.initializers import HeNormal
-from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.optimizers import Adam
 import matplotlib
 import matplotlib.pyplot as plt
 import scienceplots
@@ -137,7 +136,7 @@ def save_history(history):
     plt.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
     plt.savefig('../03_results/03_neural_network/01_performance_plots/training_history.png', dpi=300)
-    plt.savefig('../03_results/03_neural_network/01_performance_plots/training_history.pdf')
+    #plt.savefig('../03_results/03_neural_network/01_performance_plots/training_history.pdf')
     plt.close()
 
 
@@ -156,7 +155,7 @@ def save_roc_curve(model, inputs_data, outputs, weights):
     plt.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
     plt.savefig('../03_results/03_neural_network/01_performance_plots/roc_curve.png', dpi=300)
-    plt.savefig('../03_results/03_neural_network/01_performance_plots/roc_curve.pdf')
+    #plt.savefig('../03_results/03_neural_network/01_performance_plots/roc_curve.pdf')
     plt.close()
 
 
@@ -212,7 +211,7 @@ def save_histogram_of_predictions(model, inputs_data, outputs, weights=None, sig
                  xy=(0.28, 0.80), xycoords='axes fraction', fontsize=FONT_SIZE, verticalalignment='top',
                 bbox=dict(boxstyle="square,pad=0.3", fc="white", ec="black", lw=1))
     plt.savefig('../03_results/03_neural_network/01_performance_plots/prediction.png', dpi=300)
-    plt.savefig('../03_results/03_neural_network/01_performance_plots/prediction.pdf')
+    #plt.savefig('../03_results/03_neural_network/01_performance_plots/prediction.pdf')
     plt.close()
 
 
@@ -256,12 +255,6 @@ def main():
         ttbb_events[branch_name], _, _ = normalize(ttbb_events[branch_name], max_value, min_value)
         ttH_events[branch_name], _, _ = normalize(ttH_events[branch_name], max_value, min_value)
         tZbq_events[branch_name], _, _ = normalize(tZbq_events[branch_name], max_value, min_value)
-
-    tHbq_events = tHbq_events.drop(columns=['N_b'])
-    tt_events = tt_events.drop(columns=['N_b'])
-    ttbb_events = ttbb_events.drop(columns=['N_b'])
-    ttH_events = ttH_events.drop(columns=['N_b'])
-    tZbq_events = tZbq_events.drop(columns=['N_b'])
 
     # Label data
     tHbq_events['signal'] = 1
@@ -307,7 +300,7 @@ def main():
         sample_weight=weights_train
     )
     early_stop_callback = EarlyStopping(monitor='val_weighted_binary_crossentropy', mode='min', patience=20, restore_best_weights=True, verbose=1)
-    callbacks = [learning_rate_scheduler, evaluate_without_dropout, early_stop_callback]
+    callbacks = [evaluate_without_dropout, early_stop_callback]
     training_history = neural_network.fit(
         input_train, output_train, epochs=5000, batch_size=128, verbose=1, callbacks=callbacks,
         sample_weight=weights_train, validation_split=0.2, shuffle=True
