@@ -8,7 +8,8 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
 from tensorflow.keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, LearningRateScheduler, TensorBoard
 from tensorflow.keras.initializers import HeNormal
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam, SGD, RMSprop, Nadam
+from sklearn.metrics import roc_auc_score
 import matplotlib
 import matplotlib.pyplot as plt
 import scienceplots
@@ -16,6 +17,7 @@ from config import Config
 import tensorflow as tf
 import random
 import os
+import optuna
 
 WEIGHTS_SEED_NUMBER = 35
 GLOBAL_SEED_NUMBER = 5
@@ -50,6 +52,12 @@ SIGNAL_SIGNIFICANCE_WEIGHTS = {
     "tZbq": 0.00461306
 }
 
+best_neural_network = None
+best_auc_score = 0.0
+best_neural_network_training_history = None
+
+PLOTS_SAVE_PATH = '../03_results/03_neural_network/01_performance_plots'
+
 class EvaluateWithoutDropout(Callback):
     def __init__(self, train_data, sample_weight=None):
         super().__init__()
@@ -78,28 +86,45 @@ def set_plot_style():
     })
 
 
-def define_model(input_neurons):
-    model = Sequential([
-        Dense(units=input_neurons, input_dim=input_neurons, activation='relu', kernel_initializer=HeNormal()),
-        BatchNormalization(),
-        Dropout(0.5),
-        Dense(units=128, activation='relu', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)),
-        BatchNormalization(),
-        Dropout(0.5),
-        Dense(units=64, activation='relu', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)),
-        BatchNormalization(),
-        Dropout(0.5),
-        Dense(units=1, activation='sigmoid', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER))
-    ])
+def load_data():
+    tHbq_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
+    tt_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
+    ttbb_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_ttbb_SM_300K_(aTTreett;1).json')
+    ttH_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_ttH_SM_100K_(aTTreetth;1).json')
+    tZbq_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tzbq_SM_100K_(aTTreethbq;1).json')
 
-    my_optimizer = Adam(learning_rate=0.0001)
-    model.compile(
-        optimizer=my_optimizer,
-        loss='binary_crossentropy',
-        metrics=['binary_crossentropy'],
-        weighted_metrics=['binary_crossentropy']
-    )
-    return model
+    for branch_name in Config.VARIABLES_DESCRIPTION:
+        tHbq_events[branch_name], max_value, min_value = normalize(tHbq_events[branch_name])
+        tt_events[branch_name], _, _ = normalize(tt_events[branch_name], max_value, min_value)
+        ttbb_events[branch_name], _, _ = normalize(ttbb_events[branch_name], max_value, min_value)
+        ttH_events[branch_name], _, _ = normalize(ttH_events[branch_name], max_value, min_value)
+        tZbq_events[branch_name], _, _ = normalize(tZbq_events[branch_name], max_value, min_value)
+
+    # Label data
+    tHbq_events['signal'] = 1
+    tt_events['signal'] = 0
+    ttbb_events['signal'] = 0
+    ttH_events['signal'] = 0
+    tZbq_events['signal'] = 0
+
+    tHbq_events['weight'] = WEIGHTS['tHbq']
+    tt_events['weight'] = WEIGHTS['tt']
+    ttbb_events['weight'] = WEIGHTS['ttbb']
+    ttH_events['weight'] = WEIGHTS['ttH']
+    tZbq_events['weight'] = WEIGHTS['tZbq']
+
+    tHbq_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['tHbq']
+    tt_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['tt']
+    ttbb_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['ttbb']
+    ttH_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['ttH']
+    tZbq_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['tZbq']
+
+    # Prepare data
+    total_events = pd.concat([tHbq_events, tt_events, ttbb_events, ttH_events, tZbq_events])
+    total_events = total_events.sample(frac=1).reset_index(drop=True)
+    total_events.index = range(1, len(total_events) + 1)
+
+    return total_events
 
 
 def normalize(data, max_value=None, min_value=None):
@@ -114,17 +139,6 @@ def normalize(data, max_value=None, min_value=None):
     return data, max_value, min_value
 
 
-def exponential_decay(epoch, patience_epoch, initial_learning_rate, final_learning_rate, decay_factor):
-    learning_rate = initial_learning_rate
-
-    if epoch >= patience_epoch:
-        k = -np.log(final_learning_rate / initial_learning_rate) / decay_factor
-        custom_learning_rate = initial_learning_rate * np.exp(-k * (epoch - patience_epoch))
-        learning_rate = max(custom_learning_rate, final_learning_rate)
-
-    return learning_rate
-
-
 def save_history(history):
     plt.figure()
 
@@ -135,8 +149,8 @@ def save_history(history):
     plt.plot(history.history['val_weighted_binary_crossentropy'], label='Validation Data')
     plt.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
-    plt.savefig('../03_results/03_neural_network/01_performance_plots/training_history.png', dpi=300)
-    #plt.savefig('../03_results/03_neural_network/01_performance_plots/training_history.pdf')
+    plt.savefig(f'{PLOTS_SAVE_PATH}/01_png/training_history.png', dpi=300)
+    plt.savefig(f'{PLOTS_SAVE_PATH}/02_pdf/training_history.pdf')
     plt.close()
 
 
@@ -154,8 +168,8 @@ def save_roc_curve(model, inputs_data, outputs, weights):
     plt.plot([0, 1], [0, 1], color='red', linestyle='--')
     plt.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
-    plt.savefig('../03_results/03_neural_network/01_performance_plots/roc_curve.png', dpi=300)
-    #plt.savefig('../03_results/03_neural_network/01_performance_plots/roc_curve.pdf')
+    plt.savefig(f'{PLOTS_SAVE_PATH}/01_png/roc_curve.png', dpi=300)
+    plt.savefig(f'{PLOTS_SAVE_PATH}/02_pdf/roc_curve.pdf')
     plt.close()
 
 
@@ -210,8 +224,9 @@ def save_histogram_of_predictions(model, inputs_data, outputs, weights=None, sig
     plt.annotate(f'Separation Power: {separation_power * 100:.2f}%\nSignal Significance: {signal_significance * 100:.2f}%',
                  xy=(0.28, 0.80), xycoords='axes fraction', fontsize=FONT_SIZE, verticalalignment='top',
                 bbox=dict(boxstyle="square,pad=0.3", fc="white", ec="black", lw=1))
-    plt.savefig('../03_results/03_neural_network/01_performance_plots/prediction.png', dpi=300)
-    #plt.savefig('../03_results/03_neural_network/01_performance_plots/prediction.pdf')
+
+    plt.savefig(f'{PLOTS_SAVE_PATH}/01_png/prediction.png', dpi=300)
+    plt.savefig(f'{PLOTS_SAVE_PATH}/02_pdf/prediction.pdf')
     plt.close()
 
 
@@ -242,75 +257,140 @@ def save_separate_histogram_of_predictions(model, inputs_data, outputs):
         plt.close()
 
 
-def main():
-    tHbq_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
-    tt_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
-    ttbb_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_ttbb_SM_300K_(aTTreett;1).json')
-    ttH_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_ttH_SM_100K_(aTTreetth;1).json')
-    tZbq_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tzbq_SM_100K_(aTTreethbq;1).json')
+def define_model(input_neurons, trial):
+    # Hyperparameters to optimize
+    n_hidden_layers = trial.suggest_int('n_hidden_layers', 1, 5, step=1)
+    learning_rate = trial.suggest_categorical('learning_rate', [1e-5, 1e-4])
+    optimizer_name = trial.suggest_categorical('optimizer_name', ['Adam', 'SGD', 'RMSprop', 'Nadam'])
+    batch_size = trial.suggest_categorical('batch_size', [32, 64, 128, 256])
 
-    for branch_name in Config.VARIABLES_DESCRIPTION:
-        tHbq_events[branch_name], max_value, min_value = normalize(tHbq_events[branch_name])
-        tt_events[branch_name], _, _ = normalize(tt_events[branch_name], max_value, min_value)
-        ttbb_events[branch_name], _, _ = normalize(ttbb_events[branch_name], max_value, min_value)
-        ttH_events[branch_name], _, _ = normalize(ttH_events[branch_name], max_value, min_value)
-        tZbq_events[branch_name], _, _ = normalize(tZbq_events[branch_name], max_value, min_value)
+    activation_l1 = trial.suggest_categorical('activation_l1', ['relu', 'tanh', 'swish'])
+    dropout_l1 = trial.suggest_float('dropout_l1', 0.0, 0.5, step=0.1)
+    #l1_reg = trial.suggest_loguniform('l1_reg', 1e-7, 1e-3)
+    #l2_reg = trial.suggest_loguniform('l2_reg', 1e-7, 1e-3)
 
-    # Label data
-    tHbq_events['signal'] = 1
-    tt_events['signal'] = 0
-    ttbb_events['signal'] = 0
-    ttH_events['signal'] = 0
-    tZbq_events['signal'] = 0
+    # Define model
+    model = Sequential()
+    model.add(Dense(units=input_neurons, input_dim=input_neurons, activation=activation_l1, kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)))
+    model.add(BatchNormalization())
+    model.add(Dropout(dropout_l1))
 
-    tHbq_events['weight'] = WEIGHTS['tHbq']
-    tt_events['weight'] = WEIGHTS['tt']
-    ttbb_events['weight'] = WEIGHTS['ttbb']
-    ttH_events['weight'] = WEIGHTS['ttH']
-    tZbq_events['weight'] = WEIGHTS['tZbq']
+    for i in range(n_hidden_layers):
+        n_neurons = trial.suggest_int(f'n_neurons_l{i + 2}', 32, 512, step=5)
+        dropout = trial.suggest_float(f'dropout_l{i + 2}', 0.0, 0.5, step=0.1)
+        activation = trial.suggest_categorical(f'activation_l{i + 2}', ['relu', 'tanh', 'swish'])
+        model.add(Dense(units=n_neurons, activation=activation, kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)))
+        model.add(BatchNormalization())
+        model.add(Dropout(dropout))
 
-    tHbq_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['tHbq']
-    tt_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['tt']
-    ttbb_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['ttbb']
-    ttH_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['ttH']
-    tZbq_events['significance_weight'] = SIGNAL_SIGNIFICANCE_WEIGHTS['tZbq']
+    model.add(Dense(units=1, activation='sigmoid', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)))
 
-    # Prepare data
-    total_events = pd.concat([tHbq_events, tt_events, ttbb_events, ttH_events, tZbq_events])
-    total_events = total_events.sample(frac=1).reset_index(drop=True)
-    total_events.index = range(1, len(total_events) + 1)
-    input = total_events.drop(columns=['signal', 'weight', 'significance_weight'])
-    output = pd.Series(total_events['signal'])
-    events_weights = total_events['weight']
-    significance_weights = total_events['significance_weight']
+    if optimizer_name == 'Adam':
+        optimizer = Adam(learning_rate=learning_rate)
+    elif optimizer_name == 'SGD':
+        optimizer = SGD(learning_rate=learning_rate)
+    elif optimizer_name == 'RMSprop':
+        optimizer = RMSprop(learning_rate=learning_rate)
+    elif optimizer_name == 'Nadam':
+        optimizer = Nadam(learning_rate=learning_rate)
 
-    input_train, input_test, output_train, output_test, weights_train, weights_test, significance_weights_train, significance_weights_test = train_test_split(
-        input, output, events_weights, significance_weights, test_size=0.3, shuffle=True, random_state=GLOBAL_SEED_NUMBER)
-
-    columns_number = input.shape[1]
-    neural_network = define_model(input_neurons=columns_number)
-
-    learning_rate_scheduler = LearningRateScheduler(
-        lambda epoch: exponential_decay(epoch, patience_epoch=200, initial_learning_rate=0.0001,
-                                        final_learning_rate=0.00005, decay_factor=80)
+    model.compile(
+        optimizer=optimizer,
+        loss='binary_crossentropy',
+        metrics=['binary_crossentropy'],
+        weighted_metrics=['binary_crossentropy']
     )
-    tensor_board = TensorBoard(log_dir='03_results/tb_logs', histogram_freq=1, write_images=True)
+    return model, batch_size
+
+
+def objective(trial, input_train, input_test, output_train, output_test, weights_train, weights_test):
+    global best_neural_network, best_auc_score, best_neural_network_training_history
+
+    columns_number = input_train.shape[1]
+    neural_network, batch_size = define_model(input_neurons=columns_number, trial=trial)
+
     evaluate_without_dropout = EvaluateWithoutDropout(
         train_data=(input_train, output_train),
         sample_weight=weights_train
     )
-    early_stop_callback = EarlyStopping(monitor='val_weighted_binary_crossentropy', mode='min', patience=20, restore_best_weights=True, verbose=1)
-    callbacks = [evaluate_without_dropout, early_stop_callback]
-    training_history = neural_network.fit(
-        input_train, output_train, epochs=5000, batch_size=128, verbose=1, callbacks=callbacks,
-        sample_weight=weights_train, validation_split=0.2, shuffle=True
+    early_stop_callback = EarlyStopping(
+        monitor='val_weighted_binary_crossentropy',
+        mode='min',
+        patience=20,
+        restore_best_weights=True,
+        verbose=1
     )
-    neural_network.save('../03_results/03_neural_network/02_pre-trained_model/tH(bb)_signal_classification.hdf5')
+    callbacks = [evaluate_without_dropout, early_stop_callback]
 
-    save_history(training_history)
-    save_roc_curve(neural_network, input_test, output_test, weights_test)
-    save_histogram_of_predictions(neural_network, input_test, output_test, weights_test, significance_weights_test)
-    #save_separate_histogram_of_predictions(neural_network, input_test, output_test)
+    training_history = neural_network.fit(
+        input_train, output_train,
+        epochs=5000,
+        batch_size=batch_size,
+        verbose=1,
+        callbacks=callbacks,
+        sample_weight=weights_train,
+        validation_split=0.2,
+        shuffle=True,
+        workers=-1,  # Использует все доступные ядра для загрузки данных
+        use_multiprocessing=True  # Включает многозадачность для обработки данных
+    )
+
+    output_predicted = neural_network.predict(input_test)
+    auc_score = roc_auc_score(output_test, output_predicted, sample_weight=weights_test)
+
+    if auc_score > best_auc_score:
+        best_auc_score = auc_score
+        best_neural_network = neural_network
+        best_neural_network_training_history = training_history
+
+    return auc_score
+
+
+def run_optimization(input_train, input_test, output_train, output_test, weights_train, weights_test):
+    study = optuna.create_study(
+        study_name='Hyperparameter_optimization',
+        direction='maximize',
+        storage='sqlite:///../03_results/03_neural_network/optimization.db',
+        load_if_exists=True
+    )
+    study.optimize(
+        lambda trial: objective(trial, input_train, input_test, output_train, output_test, weights_train, weights_test),
+        n_trials=1,
+        n_jobs=-1
+    )
+    return study
+
+
+def main():
+    global best_neural_network, best_auc_score, best_neural_network_training_history
+
+    total_events = load_data()
+
+    input_data = total_events.drop(columns=['signal', 'weight', 'significance_weight'])
+    output_data = pd.Series(total_events['signal'])
+    events_weights = total_events['weight']
+    significance_weights = total_events['significance_weight']
+
+    input_train, input_test, output_train, output_test, weights_train, weights_test, significance_weights_train, significance_weights_test = train_test_split(
+        input_data, output_data, events_weights, significance_weights,
+        test_size=0.3,
+        shuffle=True,
+        random_state=GLOBAL_SEED_NUMBER,
+        stratify=output_data)
+
+    optimization_history = run_optimization(input_train, input_test, output_train, output_test, weights_train, weights_test)
+    optimization_history.trials_dataframe().to_json('../03_results/03_neural_network/optuna_study_results.json', orient='records',
+                                                    lines=True)
+    print('Best trial:')
+    print(f'  Value: {optimization_history.best_trial.value}')
+    print('  Params: ')
+    for key, value in optimization_history.best_trial.params.items():
+        print(f'    {key}: {value}')
+
+    best_neural_network.save('../03_results/03_neural_network/02_pre-trained_model/tH(bb)_signal_classification.hdf5')
+    save_history(best_neural_network_training_history)
+    save_roc_curve(best_neural_network, input_test, output_test, weights_test)
+    save_histogram_of_predictions(best_neural_network, input_test, output_test, weights_test, significance_weights_test)
 
 
 if __name__ == '__main__':
