@@ -9,7 +9,6 @@ from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
 from tensorflow.keras.callbacks import Callback, EarlyStopping, ModelCheckpoint, LearningRateScheduler, TensorBoard
 from tensorflow.keras.initializers import HeNormal
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop, Nadam
-from sklearn.metrics import roc_auc_score
 import matplotlib
 import matplotlib.pyplot as plt
 import scienceplots
@@ -157,14 +156,14 @@ def save_history(history):
 def save_roc_curve(model, inputs_data, outputs, weights):
     predictions = model.predict(inputs_data).ravel()
     fpr, tpr, thresholds = roc_curve(outputs, predictions, sample_weight=weights, drop_intermediate=False)
-    roc_auc = auc(fpr, tpr)
+    auc_score = auc(fpr, tpr)
 
     plt.figure()
     plt.title('Receiver Operating Characteristic', fontsize=FONT_SIZE)
     plt.ylabel('True Positive Rate', fontsize=FONT_SIZE)
     plt.xlabel('False Positive Rate', fontsize=FONT_SIZE)
     plt.tick_params(axis='both', labelsize=FONT_SIZE)
-    plt.plot(fpr, tpr, color='blue', label='ROC curve (AUC = %0.4f)' % roc_auc)
+    plt.plot(fpr, tpr, color='blue', label='ROC curve (AUC = %0.4f)' % auc_score)
     plt.plot([0, 1], [0, 1], color='red', linestyle='--')
     plt.legend(loc='best', fontsize=FONT_SIZE, fancybox=False, edgecolor='black')
 
@@ -285,6 +284,7 @@ def define_model(input_neurons, trial):
 
     model.add(Dense(units=1, activation='sigmoid', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)))
 
+    optimizer = Adam(learning_rate=learning_rate)
     if optimizer_name == 'Adam':
         optimizer = Adam(learning_rate=learning_rate)
     elif optimizer_name == 'SGD':
@@ -335,8 +335,9 @@ def objective(trial, input_train, input_test, output_train, output_test, weights
         use_multiprocessing=True  # Включает многозадачность для обработки данных
     )
 
-    output_predicted = neural_network.predict(input_test)
-    auc_score = roc_auc_score(output_test, output_predicted, sample_weight=weights_test)
+    output_predicted = neural_network.predict(input_test).ravel()
+    fpr, tpr, thresholds = roc_curve(output_test, output_predicted, sample_weight=weights_test, drop_intermediate=False)
+    auc_score = auc(fpr, tpr)
 
     if auc_score > best_auc_score:
         best_auc_score = auc_score
@@ -376,18 +377,21 @@ def main():
         test_size=0.3,
         shuffle=True,
         random_state=GLOBAL_SEED_NUMBER,
-        stratify=output_data)
+        stratify=output_data
+    )
 
     optimization_history = run_optimization(input_train, input_test, output_train, output_test, weights_train, weights_test)
-    optimization_history.trials_dataframe().to_json('../03_results/03_neural_network/optuna_study_results.json', orient='records',
-                                                    lines=True)
+    optimization_history.trials_dataframe().to_json('../03_results/03_neural_network/optuna_study_results.json',
+                                                    orient='records',
+                                                    lines=True
+                                                    )
     print('Best trial:')
     print(f'  Value: {optimization_history.best_trial.value}')
     print('  Params: ')
     for key, value in optimization_history.best_trial.params.items():
         print(f'    {key}: {value}')
 
-    best_neural_network.save('../03_results/03_neural_network/02_pre-trained_model/tH(bb)_signal_classification.hdf5')
+    best_neural_network.save('../03_results/03_neural_network/02_pre-trained_model/tH(bb).hdf5')
     save_history(best_neural_network_training_history)
     save_roc_curve(best_neural_network, input_test, output_test, weights_test)
     save_histogram_of_predictions(best_neural_network, input_test, output_test, weights_test, significance_weights_test)
