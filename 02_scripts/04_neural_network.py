@@ -17,6 +17,7 @@ import tensorflow as tf
 import random
 import os
 import optuna
+from optuna.integration import KerasPruningCallback
 
 WEIGHTS_SEED_NUMBER = 35
 GLOBAL_SEED_NUMBER = 5
@@ -255,8 +256,7 @@ def save_separate_histogram_of_predictions(model, inputs_data, outputs):
         plt.show()
         plt.close()
 
-
-def define_model(input_neurons, trial):
+def define_model(input_neurons: int, trial: optuna.Trial):
     # Hyperparameters to optimize
     n_hidden_layers = trial.suggest_int('n_hidden_layers', 1, 5, step=1)
     learning_rate = trial.suggest_categorical('learning_rate', [1e-5, 1e-4])
@@ -284,7 +284,7 @@ def define_model(input_neurons, trial):
 
     model.add(Dense(units=1, activation='sigmoid', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)))
 
-    optimizer = Adam(learning_rate=learning_rate)
+    optimizer = None
     if optimizer_name == 'Adam':
         optimizer = Adam(learning_rate=learning_rate)
     elif optimizer_name == 'SGD':
@@ -313,14 +313,21 @@ def objective(trial, input_train, input_test, output_train, output_test, weights
         train_data=(input_train, output_train),
         sample_weight=weights_train
     )
-    early_stop_callback = EarlyStopping(
+    early_stopping = EarlyStopping(
         monitor='val_weighted_binary_crossentropy',
         mode='min',
         patience=20,
         restore_best_weights=True,
         verbose=1
     )
-    callbacks = [evaluate_without_dropout, early_stop_callback]
+    pruning = KerasPruningCallback(
+        trial,
+        'val_weighted_binary_crossentropy',
+        mode='min',
+        verbose=1
+    )
+
+    callbacks = [evaluate_without_dropout, early_stopping, pruning]
 
     training_history = neural_network.fit(
         input_train, output_train,
@@ -352,11 +359,14 @@ def run_optimization(input_train, input_test, output_train, output_test, weights
         study_name='Hyperparameter_optimization',
         direction='maximize',
         storage='sqlite:///../03_results/03_neural_network/optimization.db',
-        load_if_exists=True
+        load_if_exists=True,
+        pruner=optuna.pruners.HyperbandPruner(max_resource='auto'),
+        sampler=optuna.samplers.CmaEsSampler()
     )
     study.optimize(
         lambda trial: objective(trial, input_train, input_test, output_train, output_test, weights_train, weights_test),
-        n_trials=1,
+        n_trials=9351741387053047680,
+        timeout=604800,
         n_jobs=-1
     )
     return study
