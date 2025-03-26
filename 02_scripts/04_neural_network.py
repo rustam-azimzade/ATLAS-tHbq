@@ -322,9 +322,7 @@ def objective(trial, input_train, input_test, output_train, output_test, weights
     )
     pruning = KerasPruningCallback(
         trial,
-        'val_weighted_binary_crossentropy',
-        mode='min',
-        verbose=1
+        'val_weighted_binary_crossentropy'
     )
 
     callbacks = [evaluate_without_dropout, early_stopping, pruning]
@@ -366,7 +364,7 @@ def run_optimization(input_train, input_test, output_train, output_test, weights
     study.optimize(
         lambda trial: objective(trial, input_train, input_test, output_train, output_test, weights_train, weights_test),
         n_trials=9351741387053047680,
-        timeout=604800,
+        timeout=259200,
         n_jobs=-1
     )
     return study
