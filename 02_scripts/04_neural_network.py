@@ -1,5 +1,5 @@
 import numpy as np
-from jax.example_libraries.stax import randn
+#from jax.example_libraries.stax import randn
 from matplotlib.ticker import ScalarFormatter
 from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import train_test_split
@@ -86,6 +86,18 @@ def set_plot_style():
     })
 
 
+def normalize(data, max_value=None, min_value=None):
+    if not isinstance(data, pd.DataFrame):
+        data = data.to_frame()
+
+    if max_value is None and min_value is None:
+        max_value = data.max()
+        min_value = data.min()
+
+    data = (data - min_value) / (max_value - min_value)
+    return data, max_value, min_value
+
+
 def load_data():
     tHbq_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json')
     tt_events = pd.read_json('../01_src/01_data/02_json/MiniNtuple_tt_SM_3M_(aTTreett;1).json')
@@ -124,19 +136,12 @@ def load_data():
     total_events = total_events.sample(frac=1).reset_index(drop=True)
     total_events.index = range(1, len(total_events) + 1)
 
-    return total_events
+    input_data = total_events.drop(columns=['signal', 'weight', 'significance_weight'])
+    output_data = pd.Series(total_events['signal'])
+    events_weights = pd.Series(total_events['weight'])
+    significance_weights = pd.Series(total_events['significance_weight'])
 
-
-def normalize(data, max_value=None, min_value=None):
-    if not isinstance(data, pd.DataFrame):
-        data = data.to_frame()
-
-    if max_value is None and min_value is None:
-        max_value = data.max()
-        min_value = data.min()
-
-    data = (data - min_value) / (max_value - min_value)
-    return data, max_value, min_value
+    return input_data, output_data, events_weights, significance_weights
 
 
 def save_history(history):
@@ -256,6 +261,32 @@ def save_separate_histogram_of_predictions(model, inputs_data, outputs):
         plt.show()
         plt.close()
 
+
+
+def get_model(input_neurons: int, trial: optuna.Trial):
+    model = Sequential([
+        Dense(units=input_neurons, activation='swish', kernel_initializer=HeNormal()),
+        BatchNormalization(),
+        Dropout(0.3),
+        Dense(units=382, activation='relu', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)),
+        BatchNormalization(),
+        Dropout(0.5),
+        Dense(units=1, activation='sigmoid', kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER))
+    ])
+
+    batch_size = 32
+
+    learning_rate = 0.0001
+    optimizer = RMSprop(learning_rate=learning_rate)
+    model.compile(
+        optimizer=optimizer,
+        loss='binary_crossentropy',
+        metrics=['binary_crossentropy'],
+        weighted_metrics=['binary_crossentropy']
+    )
+    return model, batch_size
+
+
 def define_model(input_neurons: int, trial: optuna.Trial):
     # Hyperparameters to optimize
     n_hidden_layers = trial.suggest_int('n_hidden_layers', 1, 5, step=1)
@@ -270,7 +301,7 @@ def define_model(input_neurons: int, trial: optuna.Trial):
 
     # Define model
     model = Sequential()
-    model.add(Dense(units=input_neurons, input_dim=input_neurons, activation=activation_l1, kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)))
+    model.add(Dense(units=input_neurons, activation=activation_l1, kernel_initializer=HeNormal(seed=WEIGHTS_SEED_NUMBER)))
     model.add(BatchNormalization())
     model.add(Dropout(dropout_l1))
 
@@ -308,6 +339,7 @@ def objective(trial, input_train, input_test, output_train, output_test, weights
 
     columns_number = input_train.shape[1]
     neural_network, batch_size = define_model(input_neurons=columns_number, trial=trial)
+    #neural_network, batch_size = get_model(input_neurons=columns_number, trial=trial)
 
     evaluate_without_dropout = EvaluateWithoutDropout(
         train_data=(input_train, output_train),
@@ -335,9 +367,7 @@ def objective(trial, input_train, input_test, output_train, output_test, weights
         callbacks=callbacks,
         sample_weight=weights_train,
         validation_split=0.2,
-        shuffle=True,
-        workers=-1,  # Использует все доступные ядра для загрузки данных
-        use_multiprocessing=True  # Включает многозадачность для обработки данных
+        shuffle=True
     )
 
     output_predicted = neural_network.predict(input_test).ravel()
@@ -353,32 +383,50 @@ def objective(trial, input_train, input_test, output_train, output_test, weights
 
 
 def run_optimization(input_train, input_test, output_train, output_test, weights_train, weights_test):
+    pruner = optuna.pruners.HyperbandPruner(
+        min_resource=10,
+        max_resource=1500,
+        reduction_factor=3
+    )
+    sampler = optuna.samplers.TPESampler()
+
     study = optuna.create_study(
         study_name='Hyperparameter_optimization',
         direction='maximize',
         storage='sqlite:///../03_results/03_neural_network/optimization.db',
         load_if_exists=True,
-        pruner=optuna.pruners.HyperbandPruner(max_resource='auto'),
-        sampler=optuna.samplers.CmaEsSampler()
+        pruner=pruner,
+        sampler=sampler
     )
+
     study.optimize(
         lambda trial: objective(trial, input_train, input_test, output_train, output_test, weights_train, weights_test),
-        n_trials=9351741387053047680,
-        timeout=259200,
+        #n_trials=9351741387053047680,
+        timeout=86400,#259200
         n_jobs=-1
     )
     return study
 
 
+def show_best(study):
+    study = optuna.load_study(
+        study_name='Hyperparameter_optimization',
+        storage='sqlite:///../03_results/03_neural_network/optimization.db'
+    )
+    best_trial = study.best_trial
+
+    print('Best Neural Network:')
+    print(f'\tID:  {best_trial.number}')
+    print(f'\tAUC: {best_trial.value}')
+    print('\tHyperparameters:')
+    for key, value in best_trial.params.items():
+        print(f'\t\t{key}: {value}')
+
+
 def main():
     global best_neural_network, best_auc_score, best_neural_network_training_history
 
-    total_events = load_data()
-
-    input_data = total_events.drop(columns=['signal', 'weight', 'significance_weight'])
-    output_data = pd.Series(total_events['signal'])
-    events_weights = total_events['weight']
-    significance_weights = total_events['significance_weight']
+    input_data, output_data, events_weights, significance_weights = load_data()
 
     input_train, input_test, output_train, output_test, weights_train, weights_test, significance_weights_train, significance_weights_test = train_test_split(
         input_data, output_data, events_weights, significance_weights,
@@ -393,11 +441,8 @@ def main():
                                                     orient='records',
                                                     lines=True
                                                     )
-    print('Best trial:')
-    print(f'  Value: {optimization_history.best_trial.value}')
-    print('  Params: ')
-    for key, value in optimization_history.best_trial.params.items():
-        print(f'    {key}: {value}')
+
+    show_best(optimization_history)
 
     best_neural_network.save('../03_results/03_neural_network/02_pre-trained_model/tH(bb).hdf5')
     save_history(best_neural_network_training_history)
