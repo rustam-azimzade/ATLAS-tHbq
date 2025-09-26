@@ -1,8 +1,15 @@
 ## PYTHON
 
 ## DATA
-- signal file: MiniNtuple_tHbq_SM_300K_(aTTreethbqSM;1).json
-- background file: MiniNtuple_tt_SM_3M_(aTTreett;1).json
+### signal file: 
+- MiniNtuple_tHbq_22M.root
+### background files:
+- MiniNtuple_tt_22M.root
+- MiniNtuple_ttbb_65979470.root
+- MiniNtuple_ttH_22M.root
+- MiniNtuple_ttW_22M.root
+- MiniNtuple_ttZ_22M.root
+- MiniNtuple_tZbq_22M.root
 
 ## VARIABLES
 - lead_lep_charge
@@ -28,7 +35,7 @@
 - FWD_m
 - jet_b2_e
 - W_T_m
-- InvMass_3Jets': 'Invariant mass of three jets
+- InvMass_3Jets
 
 ## NORMALIZATION
 
